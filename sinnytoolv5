@@ -130,97 +130,180 @@ local Tab2 = GUI:Tab{
     Icon = "rbxassetid://8569322835"
 }
 
--- Infinite Ammo
+-- Original Values Storage
+local originalValues = {
+    FireRate = {},
+    ReloadTime = {},
+    EReloadTime = {},
+    Auto = {},
+    Spread = {},
+    Recoil = {}
+}
+
+-- Infinite Ammo Toggle
+local SettingsInfinite = false
+local ammoConnection
+
 Tab2:Toggle{
     Name = "Infinite Ammo",
     Default = false,
+    Description = "Toggle infinite ammo on or off.",
     Callback = function(state)
-        local backpack = player:WaitForChild("Backpack")
-        if state then
-            for _, tool in pairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") and tool:FindFirstChild("Ammo") then
-                    tool.Ammo.Value = math.huge
-                    tool.Changed:Connect(function()
-                        if tool:FindFirstChild("Ammo") then
-                            tool.Ammo.Value = math.huge -- Keep ammo infinite
-                        end
-                    end)
-                end
-            end
-            print("Infinite Ammo Activated")
+        SettingsInfinite = state
+        if SettingsInfinite then
+            ammoConnection = game:GetService("RunService").Stepped:Connect(function()
+                pcall(function()
+                    local playerGui = game:GetService("Players").LocalPlayer.PlayerGui
+                    playerGui.GUI.Client.Variables.ammocount.Value = 99
+                    playerGui.GUI.Client.Variables.ammocount2.Value = 99
+                end)
+            end)
+            print("Infinite Ammo Enabled")
         else
-            print("Infinite Ammo Deactivated")
+            if ammoConnection then
+                ammoConnection:Disconnect()
+                ammoConnection = nil
+            end
+            print("Infinite Ammo Disabled")
         end
     end
 }
 
--- No Reload
+-- Fast Reload Toggle
 Tab2:Toggle{
-    Name = "No Reload",
+    Name = "Fast Reload",
     Default = false,
+    Description = "Toggle fast reload.",
     Callback = function(state)
-        local backpack = player:WaitForChild("Backpack")
-        if state then
-            for _, tool in pairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") then
-                    tool.Changed:Connect(function()
-                        if tool:FindFirstChild("Ammo") and tool.Ammo.Value > 0 then
-                            tool.Ammo.Value = tool.Ammo.Value -- Prevent ammo decrement
-                        end
-                    end)
+        for _, v in pairs(game.ReplicatedStorage.Weapons:GetChildren()) do
+            if v:FindFirstChild("ReloadTime") then
+                if state then
+                    if not originalValues.ReloadTime[v] then
+                        originalValues.ReloadTime[v] = v.ReloadTime.Value
+                    end
+                    v.ReloadTime.Value = 0.01
+                else
+                    if originalValues.ReloadTime[v] then
+                        v.ReloadTime.Value = originalValues.ReloadTime[v]
+                    else
+                        v.ReloadTime.Value = 0.8
+                    end
                 end
             end
-            print("No Reload Activated")
-        else
-            print("No Reload Deactivated")
+            if v:FindFirstChild("EReloadTime") then
+                if state then
+                    if not originalValues.EReloadTime[v] then
+                        originalValues.EReloadTime[v] = v.EReloadTime.Value
+                    end
+                    v.EReloadTime.Value = 0.01
+                else
+                    if originalValues.EReloadTime[v] then
+                        v.EReloadTime.Value = originalValues.EReloadTime[v]
+                    else
+                        v.EReloadTime.Value = 0.8
+                    end
+                end
+            end
         end
     end
 }
 
--- Rapid Fire
+-- Fast Fire Rate Toggle
 Tab2:Toggle{
-    Name = "Rapid Fire",
+    Name = "Fast Fire Rate",
     Default = false,
+    Description = "Toggle fast fire rate.",
     Callback = function(state)
-        local backpack = player:WaitForChild("Backpack")
-        if state then
-            for _, tool in pairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") and tool:FindFirstChild("FireRate") then
-                    tool.FireRate.Value = 0.1 -- Adjust the fire rate
+        for _, v in pairs(game.ReplicatedStorage.Weapons:GetDescendants()) do
+            if v.Name == "FireRate" or v.Name == "BFireRate" then
+                if state then
+                    if not originalValues.FireRate[v] then
+                        originalValues.FireRate[v] = v.Value
+                    end
+                    v.Value = 0.02
+                else
+                    if originalValues.FireRate[v] then
+                        v.Value = originalValues.FireRate[v]
+                    else
+                        v.Value = 0.8
+                    end
                 end
             end
-            print("Rapid Fire Activated")
-        else
-            for _, tool in pairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") and tool:FindFirstChild("FireRate") then
-                    tool.FireRate.Value = 0.5 -- Reset to normal fire rate
-                end
-            end
-            print("Rapid Fire Deactivated")
         end
     end
 }
 
--- No Spread
+-- Always Auto Toggle
+Tab2:Toggle{
+    Name = "Always Auto",
+    Default = false,
+    Description = "Toggle always auto-fire.",
+    Callback = function(state)
+        for _, v in pairs(game.ReplicatedStorage.Weapons:GetDescendants()) do
+            if v.Name == "Auto" or v.Name == "AutoFire" or v.Name == "Automatic" or v.Name == "AutoShoot" or v.Name == "AutoGun" then
+                if state then
+                    if not originalValues.Auto[v] then
+                        originalValues.Auto[v] = v.Value
+                    end
+                    v.Value = true
+                else
+                    if originalValues.Auto[v] then
+                        v.Value = originalValues.Auto[v]
+                    else
+                        v.Value = false
+                    end
+                end
+            end
+        end
+    end
+}
+
+-- No Spread Toggle
 Tab2:Toggle{
     Name = "No Spread",
     Default = false,
+    Description = "Toggle no spread.",
     Callback = function(state)
-        local backpack = player:WaitForChild("Backpack")
-        if state then
-            for _, tool in pairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") and tool:FindFirstChild("Spread") then
-                    tool.Spread.Value = 0 -- Set spread to zero
+        for _, v in pairs(game:GetService("ReplicatedStorage").Weapons:GetDescendants()) do
+            if v.Name == "MaxSpread" or v.Name == "Spread" or v.Name == "SpreadControl" then
+                if state then
+                    if not originalValues.Spread[v] then
+                        originalValues.Spread[v] = v.Value
+                    end
+                    v.Value = 0
+                else
+                    if originalValues.Spread[v] then
+                        v.Value = originalValues.Spread[v]
+                    else
+                        v.Value = 1
+                    end
                 end
             end
-            print("No Spread Activated")
-        else
-            for _, tool in pairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") and tool:FindFirstChild("Spread") then
-                    tool.Spread.Value = 0.1 -- Reset to default spread
+        end
+    end
+}
+
+-- No Recoil Toggle
+Tab2:Toggle{
+    Name = "No Recoil",
+    Default = false,
+    Description = "Toggle no recoil.",
+    Callback = function(state)
+        for _, v in pairs(game:GetService("ReplicatedStorage").Weapons:GetDescendants()) do
+            if v.Name == "RecoilControl" or v.Name == "Recoil" then
+                if state then
+                    if not originalValues.Recoil[v] then
+                        originalValues.Recoil[v] = v.Value
+                    end
+                    v.Value = 0
+                else
+                    if originalValues.Recoil[v] then
+                        v.Value = originalValues.Recoil[v]
+                    else
+                        v.Value = 1
+                    end
                 end
             end
-            print("No Spread Deactivated")
         end
     end
 }
@@ -231,29 +314,54 @@ local Tab3 = GUI:Tab{
     Icon = "rbxassetid://8569322835"
 }
 
--- Speed Boost
+-- Infinite Jump Toggle
+local jumpEnabled = false
+local jumpHeight = 50
+local UIS = game:GetService("UserInputService")
+
+local function onInputBegan(UserInput)
+    if jumpEnabled and UserInput.UserInputType == Enum.UserInputType.Keyboard and UserInput.KeyCode == Enum.KeyCode.Space then
+        local character = game.Players.LocalPlayer.Character
+        if character and character:FindFirstChild("Humanoid") then
+            local humanoid = character.Humanoid
+            if humanoid:GetState() == Enum.HumanoidStateType.Jumping or humanoid:GetState() == Enum.HumanoidStateType.Freefall then
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    rootPart.Velocity = Vector3.new(0, jumpHeight, 0)
+                end
+            end
+        end
+    end
+end
+
+UIS.InputBegan:Connect(onInputBegan)
+
 Tab3:Toggle{
-    Name = "Speed Boost",
+    Name = "Infinite Jump",
     Default = false,
     Callback = function(state)
+        jumpEnabled = state
         if state then
-            player.Character.Humanoid.WalkSpeed = 50 -- Adjust speed as needed
-            print("Speed Boost Enabled")
+            print("Infinite Jump Enabled")
         else
-            player.Character.Humanoid.WalkSpeed = 16 -- Reset to default
-            print("Speed Boost Disabled")
+            print("Infinite Jump Disabled")
         end
     end
 }
 
 -- Tab 4: Credits
-local Tab4 = GUI:Tab{
+local Tab4 = GUI:Tab{ 
     Name = "Credits",
     Icon = "rbxassetid://8569322835"
 }
 
-Tab4:Label{
-    Name = "Script created by YourName",
+-- Button to copy Discord server link
+Tab4:Button{
+    Name = "Copy Discord Link",
+    Callback = function()
+        setclipboard("https://discord.gg/GHU7dzJquE") -- Your actual Discord link
+        print("Discord link copied to clipboard!")
+    end
 }
 
 print("Script loaded successfully.")
