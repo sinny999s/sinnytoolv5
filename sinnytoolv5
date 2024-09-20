@@ -1,13 +1,12 @@
-local Mercury = loadstring(game:HttpGet("https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"))()
-
-local GUI = Mercury:Create{
-    Name = "Mercury",
+local SinnyTool = loadstring(game:HttpGet("https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"))()
+local GUI = SinnyTool:Create{
+    Name = "Sinny Tool",
     Size = UDim2.fromOffset(600, 400),
-    Theme = Mercury.Themes.Dark,
+    Theme = SinnyTool.Themes.Dark,
     Link = "https://github.com/sinny999s/sinnytoolv5"
 }
 
--- Tab 1: Player (Aimbot and ESP)
+-- Tab 1: Player (Aimbot only)
 local Tab1 = GUI:Tab{
     Name = "Player",
     Icon = "rbxassetid://8569322835"
@@ -16,28 +15,56 @@ local Tab1 = GUI:Tab{
 local player = game.Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local runService = game:GetService("RunService")
-local userInputService = game:GetService("UserInputService")
-
-local targetPlayer = nil -- Store the current target player
+local UIS = game:GetService("UserInputService")
+local targetPlayer = nil
 local smoothness = 5 -- Default smoothness value (1 to 10)
-local mouseDown = false
 local aimbotConnection
+local MIN_TARGET_Y = 5 -- Minimum Y position for valid targets
+local FOV_RADIUS = 70 -- Default FOV radius
 
-function getClosestEnemyPlayer()
+-- Initialize Aimbot state
+getgenv().AimbotEnabled = false
+
+-- Function to check if a target is within FOV
+local function isInFOV(targetPosition)
+    local direction = (targetPosition - camera.CFrame.Position).Unit
+    local cameraDirection = camera.CFrame.LookVector
+    local angle = math.deg(math.acos(direction:Dot(cameraDirection)))
+    return angle <= (FOV_RADIUS / 2) -- Use FOV_RADIUS
+end
+
+-- Function to check if the enemy is visible to the player
+local function isVisibleToPlayer(enemyPlayer)
+    local humanoidRootPart = enemyPlayer.Character and enemyPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if humanoidRootPart then
+        local direction = (humanoidRootPart.Position - camera.CFrame.Position).Unit
+        local ray = Ray.new(camera.CFrame.Position, direction * (humanoidRootPart.Position - camera.CFrame.Position).Magnitude)
+        local hitPart = workspace:FindPartOnRay(ray, player.Character)
+        return hitPart == nil or hitPart.Parent == enemyPlayer.Character
+    end
+    return false
+end
+
+-- Get the closest visible enemy player
+local function getClosestVisibleEnemyPlayer()
     local closestDistance = math.huge
     local closestPlayer = nil
 
     for _, enemyPlayer in pairs(game.Players:GetPlayers()) do
         if enemyPlayer ~= player and enemyPlayer.TeamColor ~= player.TeamColor and enemyPlayer.Character then
-            local character = enemyPlayer.Character
-            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-            local humanoid = character:FindFirstChild("Humanoid")
+            local humanoidRootPart = enemyPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local humanoid = enemyPlayer.Character:FindFirstChild("Humanoid")
 
             if humanoidRootPart and humanoid and humanoid.Health > 0 then
-                local distance = (player.Character.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude
-                if distance < closestDistance and humanoidRootPart.Position.Y >= 0 then
-                    closestDistance = distance
-                    closestPlayer = enemyPlayer
+                local targetPosition = humanoidRootPart.Position
+                
+                if targetPosition.Y > MIN_TARGET_Y and isInFOV(targetPosition) and isVisibleToPlayer(enemyPlayer) then
+                    local distance = (player.Character.HumanoidRootPart.Position - targetPosition).Magnitude
+                    
+                    if distance < closestDistance then
+                        closestDistance = distance
+                        closestPlayer = enemyPlayer
+                    end
                 end
             end
         end
@@ -46,50 +73,42 @@ function getClosestEnemyPlayer()
     return closestPlayer
 end
 
-function startAimbot()
+-- Start the Aimbot
+local function startAimbot()
+    if aimbotConnection then return end
     aimbotConnection = runService.Stepped:Connect(function()
-        if mouseDown and getgenv().AimbotEnabled then
-            if not targetPlayer or not targetPlayer.Character or targetPlayer.Character:FindFirstChild("Humanoid").Health <= 0 then
-                targetPlayer = getClosestEnemyPlayer()
-            end
-            
-            if targetPlayer then
-                local targetPosition = targetPlayer.Character.HumanoidRootPart.Position
-                if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                    local currentCFrame = camera.CFrame
-                    local targetCFrame = CFrame.new(currentCFrame.Position, targetPosition)
-                    local newCFrame = currentCFrame:Lerp(targetCFrame, smoothness / 10)
+        if getgenv().AimbotEnabled then
+            if targetPlayer and targetPlayer.Character then
+                local humanoidRootPart = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if humanoidRootPart then
+                    local targetPosition = humanoidRootPart.Position
+                    
+                    if targetPosition.Y > MIN_TARGET_Y and isInFOV(targetPosition) and isVisibleToPlayer(targetPlayer) then
+                        local currentCFrame = camera.CFrame
+                        local targetCFrame = CFrame.new(currentCFrame.Position, targetPosition)
+                        local newCFrame = currentCFrame:Lerp(targetCFrame, smoothness / 10)
 
-                    camera.CFrame = newCFrame
-
-                    if not mouseDown then
-                        mouse1press()
-                        mouseDown = true
+                        camera.CFrame = newCFrame
+                    else
+                        targetPlayer = getClosestVisibleEnemyPlayer() -- Find new target
                     end
+                else
+                    targetPlayer = getClosestVisibleEnemyPlayer() -- Get new target if no humanoidRootPart
                 end
             else
-                if mouseDown then
-                    mouse1release()
-                    mouseDown = false
-                end
+                targetPlayer = getClosestVisibleEnemyPlayer() -- Find closest visible enemy
             end
         else
-            if mouseDown then
-                mouse1release()
-                mouseDown = false
-            end
+            stopAimbot()
         end
     end)
 end
 
-function stopAimbot()
+-- Stop the Aimbot
+local function stopAimbot()
     if aimbotConnection then
         aimbotConnection:Disconnect()
         aimbotConnection = nil
-    end
-    if mouseDown then
-        mouse1release()
-        mouseDown = false
     end
 end
 
@@ -101,28 +120,65 @@ Tab1:Toggle{
         getgenv().AimbotEnabled = state
         if state then
             print("Aimbot Enabled")
+            targetPlayer = getClosestVisibleEnemyPlayer() -- Set initial target
             startAimbot()
         else
-            print("Aimbot Disabled")
             stopAimbot()
+            print("Aimbot Disabled")
         end
     end
 }
 
--- ESP Toggle
-Tab1:Toggle{
-    Name = "Enable ESP",
-    Default = false,
-    Callback = function(state)
-        if state then
-            loadstring(game:HttpGet('https://raw.githubusercontent.com/zzerexx/scripts/main/UniversalEsp.lua'))()
-            print("ESP Enabled")
-        else
-            print("ESP Disabled")
-            -- Logic to disable ESP if needed
-        end
+-- Smoothness Slider
+Tab1:Slider{
+    Name = "Aimbot Smoothness",
+    Min = 1,
+    Max = 10,
+    Default = 5,
+    Callback = function(value)
+        smoothness = value
+        print("Smoothness set to " .. value)
     end
 }
+
+-- FOV Radius Slider
+Tab1:Slider{
+    Name = "FOV Radius",
+    Min = 10,
+    Max = 150,
+    Default = FOV_RADIUS,
+    Callback = function(value)
+        FOV_RADIUS = value
+        print("FOV Radius set to " .. value)
+    end
+}
+
+-- Input Handling for Aimbot and Target Switching
+UIS.InputBegan:Connect(function(input, gameProcessedEvent)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then -- Right Mouse Button
+        getgenv().AimbotEnabled = true
+        targetPlayer = getClosestVisibleEnemyPlayer() -- Set initial target
+        startAimbot()
+    end
+
+    if input.KeyCode == Enum.KeyCode.T then
+        if getgenv().AimbotEnabled then
+            targetPlayer = getClosestVisibleEnemyPlayer() -- Switch to the closest visible enemy
+            if targetPlayer then
+                print("Target switched to: " .. targetPlayer.Name) -- Print target switch confirmation
+            else
+                print("No visible enemies found.")
+            end
+        end
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then -- Right Mouse Button
+        getgenv().AimbotEnabled = false
+        stopAimbot()
+    end
+end)
 
 -- Tab 2: Gun Mods
 local Tab2 = GUI:Tab{
@@ -151,11 +207,17 @@ Tab2:Toggle{
     Callback = function(state)
         SettingsInfinite = state
         if SettingsInfinite then
-            ammoConnection = game:GetService("RunService").Stepped:Connect(function()
+            ammoConnection = runService.Heartbeat:Connect(function()
                 pcall(function()
-                    local playerGui = game:GetService("Players").LocalPlayer.PlayerGui
-                    playerGui.GUI.Client.Variables.ammocount.Value = 99
-                    playerGui.GUI.Client.Variables.ammocount2.Value = 99
+                    local playerGui = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+                    local gui = playerGui:WaitForChild("GUI")
+
+                    if gui.Client.Variables:FindFirstChild("ammocount") then
+                        gui.Client.Variables.ammocount.Value = 999
+                    end
+                    if gui.Client.Variables:FindFirstChild("ammocount2") then
+                        gui.Client.Variables.ammocount2.Value = 999
+                    end
                 end)
             end)
             print("Infinite Ammo Enabled")
@@ -314,10 +376,121 @@ local Tab3 = GUI:Tab{
     Icon = "rbxassetid://8569322835"
 }
 
+-- Speed Boost Toggle
+local speedBoostEnabled = false
+local defaultWalkSpeed = player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.WalkSpeed or 16
+local boostedSpeed = 50 -- Set desired boosted speed
+
+Tab3:Toggle{
+    Name = "Speed Boost",
+    Default = false,
+    Callback = function(state)
+        speedBoostEnabled = state
+        if state then
+            player.Character.Humanoid.WalkSpeed = boostedSpeed
+            print("Speed Boost Enabled")
+        else
+            player.Character.Humanoid.WalkSpeed = defaultWalkSpeed
+            print("Speed Boost Disabled")
+        end
+    end
+}
+
+-- Teleportation Toggle
+local teleportEnabled = false
+
+Tab3:Toggle{
+    Name = "Teleportation",
+    Default = false,
+    Callback = function(state)
+        teleportEnabled = state
+        if state then
+            print("Teleportation Enabled. Click to teleport.")
+        else
+            print("Teleportation Disabled.")
+        end
+    end
+}
+
+UIS.InputBegan:Connect(function(input, gameProcessedEvent)
+    if teleportEnabled and input.UserInputType == Enum.UserInputType.MouseButton1 and not gameProcessedEvent then
+        local mouse = player:GetMouse()
+        player.Character.HumanoidRootPart.Position = Vector3.new(mouse.Hit.X, mouse.Hit.Y + 3, mouse.Hit.Z)
+    end
+end)
+
+-- Fly Toggle
+local flying = false
+local flyConnection
+
+Tab3:Toggle{
+    Name = "Fly",
+    Default = false,
+    Callback = function(state)
+        flying = state
+        if state then
+            local bodyVelocity = Instance.new("BodyVelocity")
+            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+            bodyVelocity.Parent = player.Character.HumanoidRootPart
+
+            flyConnection = runService.RenderStepped:Connect(function()
+                if flying and player.Character then
+                    local moveDirection = Vector3.new(0, 0, 0)
+                    if UIS:IsKeyDown(Enum.KeyCode.W) then moveDirection = moveDirection + camera.CFrame.LookVector end
+                    if UIS:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection - camera.CFrame.LookVector end
+                    if UIS:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection - camera.CFrame.RightVector end
+                    if UIS:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + camera.CFrame.RightVector end
+                    
+                    bodyVelocity.Velocity = Vector3.new(moveDirection.X * 50, (UIS:IsKeyDown(Enum.KeyCode.Space) and 50) or (UIS:IsKeyDown(Enum.KeyCode.LeftShift) and -50) or 0, moveDirection.Z * 50)
+                else
+                    if flyConnection then
+                        flyConnection:Disconnect()
+                        bodyVelocity:Destroy() -- Cleanup the BodyVelocity
+                    end
+                end
+            end)
+        else
+            if flyConnection then
+                flyConnection:Disconnect()
+                player.Character.HumanoidRootPart:FindFirstChildOfClass("BodyVelocity"):Destroy() -- Clean up the BodyVelocity if flying is stopped
+            end
+        end
+    end
+}
+
+-- Wall Climbing Toggle
+local wallClimbEnabled = false
+
+Tab3:Toggle{
+    Name = "Wall Climbing",
+    Default = false,
+    Callback = function(state)
+        wallClimbEnabled = state
+        if state then
+            print("Wall Climbing Enabled")
+        else
+            print("Wall Climbing Disabled")
+        end
+    end
+}
+
+runService.RenderStepped:Connect(function()
+    if wallClimbEnabled and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local rootPart = player.Character.HumanoidRootPart
+        if rootPart.Velocity.Y > 0 then -- If player is jumping
+            local ray = Ray.new(rootPart.Position, rootPart.CFrame.LookVector * 2)
+            local hit = workspace:FindPartOnRay(ray, player.Character)
+            if hit and hit:IsA("Part") and hit.CanCollide then
+                rootPart.Velocity = Vector3.new(rootPart.Velocity.X, 50, rootPart.Velocity.Z) -- Adjust this value for how high you want to climb
+            end
+        end
+    end
+end)
+
 -- Infinite Jump Toggle
 local jumpEnabled = false
 local jumpHeight = 50
-local UIS = game:GetService("UserInputService")
 
 local function onInputBegan(UserInput)
     if jumpEnabled and UserInput.UserInputType == Enum.UserInputType.Keyboard and UserInput.KeyCode == Enum.KeyCode.Space then
